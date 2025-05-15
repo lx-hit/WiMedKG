@@ -2,22 +2,33 @@ import json
 import llm
 import tqdm
 import re
-import sys
 import random
 import os
+import argparse
 
 LLM_path = "/home/llm_user/Baichuan2-13B-Chat"
-folder = "./result_0320/"
+folder = "./data"
 file = "train_path.json"
+sample_number = 0
+
+def init_parser():
+    global sample_number, folder, LLM_path
+    parser = argparse.ArgumentParser(description='Knowledge-enhanced Q&A on large language models')
+    parser.add_argument("-p", "--path", type=str, default="./data", help="The folder where the CMB data set or preprocessed files are located")
+    parser.add_argument("-l", "--llm",type=str, default="/home/llm_user/Baichuan2-13B-Chat", help="The path where the local large language model is located")
+    parser.add_argument("-n", "--number", type=int, default=0, help="Amount of knowledges provided for large language models")
+    args = parser.parse_args()
+    sample_number = args.number
+    folder = args.path
+    LLM_path = args.llm
 
 def load_llm():
     print("Loading LLM {} ...".format(LLM_path))
-    gpt = llm.BaiChuan_LLM()
-    gpt.init_LLM(LLM_path)
+    gpt = llm.BaiChuan_LLM(LLM_path)
+    # print("Loading LLM {} ...".format("API"))
+    # gpt = llm.api_LLM()
     print("Finish loading LLM!")
     return gpt
-
-sample_number = int(sys.argv[1])
 
 def exact_ans(res):
     res = res.upper()
@@ -30,12 +41,14 @@ def exact_ans(res):
 
 if __name__ == '__main__':
 
-    if not os.path.exists(folder):  #判断是否存在文件夹如果不存在则创建为文件夹
-        os.makedirs(folder)
+    init_parser()
+
+    if not os.path.exists(os.path.join(folder, "result")):  #判断是否存在文件夹如果不存在则创建为文件夹
+        os.makedirs(os.path.join(folder, "result"))
 
     gpt = load_llm()
 
-    f = open(folder + file, "r")
+    f = open(os.path.join(folder, file), "r")
     print("Reading " + file)
     data = json.load(f)
     
@@ -47,26 +60,23 @@ if __name__ == '__main__':
     for item in tqdm.tqdm(data):
         cnt += 1
         if cnt%50 == 0:
+            del gpt
             gpt = load_llm()
         
         path = item["paths"]
-
         if len(path) < sample_number:
             item["path_sample"] = path
         else :
             item["path_sample"] = random.sample(path, sample_number)            
-
         item["knowledge"] = ""
         for path in item["path_sample"]:
             item["knowledge"] += ","+path[2]
-
         if len(item["path_sample"]) > 0:
             item["query"] = query_template1.format_map(item)
         else:
             item["query"] = query_template2.format_map(item)
-
         item["response"] = gpt.query(item["query"])
         item["answer_with_triples"] = exact_ans(item["response"])
 
 
-    json_str = json.dump(data, open(folder+"/final_with_answer_{}.json".format(sample_number), "w+"), indent=4, ensure_ascii=False)
+    json_str = json.dump(data, open(os.path.join(folder, "result/final_with_answer_{}.json".format(sample_number)), "w+"), indent=4, ensure_ascii=False)
